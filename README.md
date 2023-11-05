@@ -176,7 +176,15 @@ kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.3
 
 2. Install Calico by creating the necessary custom resource. For more information on configuration options available in this manifest, see the [installation reference](https://docs.tigera.io/calico/latest/reference/installation/api).
 ```
-kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.3/manifests/custom-resources.yaml
+wegt https://raw.githubusercontent.com/projectcalico/calico/v3.26.3/manifests/custom-resources.yaml
+vi custom-resources.yaml
+#And replace the cidr with the one from --pod-network-cidr in kubeadm init
+---------------------
+ipPools:
+- blockSize: 26
+  cidr: 10.244.0.0/16
+---------------------
+kubectl create -f ./custom-resources.yaml
 ```
 
 3. Confirm that all of the pods are running with the following command, and wait until each pod has the STATUS of `Running`.
