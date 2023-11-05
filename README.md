@@ -168,10 +168,36 @@ sudo chown $(id -u):$(id -g) $HOME/.kube/config
 ```
 
 * Install Networking component (CNI)
+1. Install the Tigera Calico operator and custom resource definitions.
 
 ```
-kubectl apply -f https://docs.projectcalico.org/v3.8/manifests/calico.yaml
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.3/manifests/tigera-operator.yaml
 ```
+
+2. Install Calico by creating the necessary custom resource. For more information on configuration options available in this manifest, see the [installation reference](https://docs.tigera.io/calico/latest/reference/installation/api).
+```
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.3/manifests/custom-resources.yaml
+```
+
+3. Confirm that all of the pods are running with the following command, and wait until each pod has the STATUS of `Running`.
+```
+watch kubectl get pods -n calico-system
+```
+
+4. Remove the taints on the control plane so that you can schedule pods on it.
+```
+kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+kubectl taint nodes --all node-role.kubernetes.io/master-
+```
+
+5. Confirm that you now have a node in your cluster with the following command.
+```
+kubectl get nodes -o wide
+----------------------------------------------------------------------------------------------------------------------------------------
+NAME              STATUS   ROLES    AGE   VERSION   INTERNAL-IP   EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION    CONTAINER-RUNTIME
+<your-hostname>   Ready    master   52m   v1.12.2   10.128.0.28   <none>        Ubuntu 18.04.1 LTS   4.15.0-1023-gcp   docker://18.6.1
+```
+
 
 * Join the worker node
 
@@ -180,12 +206,11 @@ The below steps are to be run __**only on the worker node**__
 The output of the kubeadm init command will provide the kubeadm join as its output. Run the kubeadm join command on the worker nodes.
 
 ```
-kubeadm join 10.138.0.2:6443 --token 3ccgnq.2owa1scoiqqoqhdq \
---discovery-token-ca-cert-hash sha256:04ff7a9148ae02db8a4be70f016fe66d6d5870ea09641e48f6a7db54747e1acd
+kubeadm join 192.168.56.2:6443 --token xq5sw6.e473xbm84r2irvbj \ 
+--discovery-token-ca-cert-hash sha256:e34ee7792f4638b345c9cad8f9bc61cbc1c15bf8e03dd0e690abf13196596418
 ```
 
 The output will be as below
-
 ```
 #This node has joined the cluster:
 #* Certificate signing request was sent to apiserver and a response was received.
