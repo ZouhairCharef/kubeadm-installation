@@ -176,7 +176,7 @@ kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.3
 
 2. Install Calico by creating the necessary custom resource. For more information on configuration options available in this manifest, see the [installation reference](https://docs.tigera.io/calico/latest/reference/installation/api).
 ```
-wegt https://raw.githubusercontent.com/projectcalico/calico/v3.26.3/manifests/custom-resources.yaml
+wget https://raw.githubusercontent.com/projectcalico/calico/v3.26.3/manifests/custom-resources.yaml
 vi custom-resources.yaml
 #And replace the cidr with the one from --pod-network-cidr in kubeadm init
 ---------------------
