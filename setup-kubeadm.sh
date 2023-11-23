@@ -1,14 +1,17 @@
 #!/bin/bash
+# common.sh
+# copy this script and run in all master and worker nodes
+#i1) Switch to root user [ sudo -i]
 
-# Ensure the script is run as root
-if [ "$EUID" -ne 0 ]; then
-  echo "Please run as root"
-  exit
-fi
+#2) Disable swap & add kernel settings
 
-echo "Step 1: Configuring kernel modules for Kubernetes."
-# Load kernel modules and make them persistent across reboots
-cat <<EOF | tee /etc/modules-load.d/k8s.conf
+swapoff -a
+sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+
+
+#3) Add  kernel settings & Enable IP tables(CNI Prerequisites)
+
+cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
 overlay
 br_netfilter
 EOF
@@ -16,72 +19,79 @@ EOF
 modprobe overlay
 modprobe br_netfilter
 
-echo "Step 2: Setting sysctl parameters for Kubernetes networking."
-# Set sysctl params required by setup, make them persist across reboots
-cat <<EOF | tee /etc/sysctl.d/k8s.conf
+cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
 net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 net.ipv4.ip_forward                 = 1
 EOF
 
-# Apply sysctl params without reboot
 sysctl --system
 
-# Verify if modules are loaded
-lsmod | grep br_netfilter
-lsmod | grep overlay
+#4) Install containerd run time
 
-# Check the sysctl params
-sysctl net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables net.ipv4.ip_forward
+#To install containerd, first install its dependencies.
 
-echo "Step 3: Removing any existing Docker or container-related packages."
-# Remove any existing Docker packages
-for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do
-  apt-get remove -y "$pkg"
-done
+apt-get update -y
+apt-get install ca-certificates curl gnupg lsb-release -y
 
-echo "Step 4: Installing Docker from Docker's official GPG key and repository."
-# Add Docker's official GPG key
-apt-get update
-apt-get install -y ca-certificates curl gnupg
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-chmod a+r /etc/apt/keyrings/docker.gpg
+#Note: We are not installing Docker Here.Since containerd.io package is part of docker apt repositories hence we added docker repository & it's key to download and install containerd.
+# Add Docker’s official GPG key:
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
-# Add the Docker repository to Apt sources
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-apt-get update
-apt-get install -y containerd.io
+#Use follwing command to set up the repository:
 
-echo "Step 5: Configuring containerd."
-# Configure containerd
-tee /etc/containerd/config.toml > /dev/null <<EOF
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
-  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
-    SystemdCgroup = true
-EOF
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-# Restart containerd to apply changes
+# Install containerd
+
+apt-get update -y
+apt-get install containerd.io -y
+
+# Generate default configuration file for containerd
+
+#Note: Containerd uses a configuration file located in /etc/containerd/config.toml for specifying daemon level options.
+#The default configuration can be generated via below command.
+
+containerd config default > /etc/containerd/config.toml
+
+# Run following command to update configure cgroup as systemd for contianerd.
+
+sed -i 's/SystemdCgroup \= false/SystemdCgroup \= true/g' /etc/containerd/config.toml
+
+# Restart and enable containerd service
+
 systemctl restart containerd
+systemctl enable containerd
 
-echo "Step 6: Installing Kubernetes."
-# Update packages and install requirements
+#5) Installing kubeadm, kubelet and kubectl
+
+# Update the apt package index and install packages needed to use the Kubernetes apt repository:
+
 apt-get update
 apt-get install -y apt-transport-https ca-certificates curl
 
-# Add Kubernetes GPG key
-curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.26/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+# Download the Google Cloud public signing key:
 
-# Add Kubernetes repository to Apt sources
-echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.26/deb/ /' | tee /etc/apt/sources.list.d/kubernetes.list
+curl -fsSL https://dl.k8s.io/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-archive-keyring.gpg
 
-# Update Apt packages list and install Kubernetes
+# Add the Kubernetes apt repository:
+
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+# Update apt package index, install kubelet, kubeadm and kubectl, and pin their version:
+
 apt-get update
 apt-get install -y kubelet kubeadm kubectl
 
-# Mark Kubernetes packages to not be upgraded
+# apt-mark hold will prevent the package from being automatically upgraded or removed.
+
 apt-mark hold kubelet kubeadm kubectl
 
-echo "Kubernetes installation is complete. System ready for Kubernetes setup."
+# Enable and start kubelet service
 
-# End of script
+systemctl daemon-reload
+systemctl start kubelet
+systemctl enable kubelet.service
